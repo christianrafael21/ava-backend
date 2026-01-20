@@ -26,6 +26,10 @@ No diretório `goldenraspberry-api`, execute:
 mvn test
 ```
 
+### Base de dados
+
+A base de dados encontra-se na pasta data, podendo ser alterada, seguindo a mesma estrutura.
+
 ## Endpoint disponível
 
 ### Obter intervalos de prêmios dos produtores
