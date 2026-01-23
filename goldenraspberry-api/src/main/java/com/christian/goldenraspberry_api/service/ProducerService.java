@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import com.christian.goldenraspberry_api.dto.AwardIntervalResponseDTO;
 import com.christian.goldenraspberry_api.dto.ProducerIntervalResponseDTO;
+import com.christian.goldenraspberry_api.dto.ResultadoIntervaloDTO;
 import com.christian.goldenraspberry_api.model.Filme;
 import com.christian.goldenraspberry_api.repository.FilmeRepository;
 
@@ -21,27 +22,68 @@ public class ProducerService {
 
         List<Filme> filmesVencedores = filmeRepository.findByWinnerTrue();
 
-        Map<String, List<Integer>> producerYears = new HashMap<>();
+        Map<String, List<Integer>> produtoresAno = construirMapaAnosPorProdutor(filmesVencedores);
+        List<ProducerIntervalResponseDTO> todosIntervalos = calcularIntervalos(produtoresAno);
 
-        for (Filme filme : filmesVencedores) {
+        if (todosIntervalos.isEmpty()) {
+            return new AwardIntervalResponseDTO(new ArrayList<>(), new ArrayList<>());
+        }
 
-            String producersString = filme.getProducers();
+         ResultadoIntervaloDTO resultado = encontrarMinMax(todosIntervalos);
 
-            List<String> nomes = splitProducers(producersString);
+        return new AwardIntervalResponseDTO(resultado.min(), resultado.max());
+    }
 
-            Integer ano = filme.getAno();
+    private ResultadoIntervaloDTO encontrarMinMax(List<ProducerIntervalResponseDTO> todosIntervalos) {
+        int menorIntervalo = Integer.MAX_VALUE;
+        int maiorIntervalo = Integer.MIN_VALUE;
+        List<ProducerIntervalResponseDTO> min = new ArrayList<>();
+        List<ProducerIntervalResponseDTO> max = new ArrayList<>();
 
-            for (String produtor : nomes) {
-                if (!producerYears.containsKey(produtor)) {
-                    producerYears.put(produtor, new ArrayList<>());
-                }
-                producerYears.get(produtor).add(ano);
+        for (ProducerIntervalResponseDTO dto : todosIntervalos) {
+            int intervalo = dto.interval();
+
+            if (intervalo < menorIntervalo) {
+                menorIntervalo = intervalo;
+                min.clear();
+                min.add(dto);
+            } else if (intervalo == menorIntervalo) {
+                min.add(dto);
+            }
+
+            if (intervalo > maiorIntervalo) {
+                maiorIntervalo = intervalo;
+                max.clear();
+                max.add(dto);
+            } else if (intervalo == maiorIntervalo) {
+                max.add(dto);
             }
         }
 
+        return new ResultadoIntervaloDTO(menorIntervalo, maiorIntervalo, min, max);
+    }
+
+    private Map<String, List<Integer>> construirMapaAnosPorProdutor(List<Filme> filmesVencedores) {
+        Map<String, List<Integer>> produtoresAno = new HashMap<>();
+
+        for (Filme filme : filmesVencedores) {
+            List<String> nomes = splitProducers(filme.getProducers());
+            Integer ano = filme.getAno();
+
+            for (String produtor : nomes) {
+                produtoresAno
+                        .computeIfAbsent(produtor, k -> new ArrayList<>())
+                        .add(ano);
+            }
+        }
+
+        return produtoresAno;
+    }
+
+    private List<ProducerIntervalResponseDTO> calcularIntervalos(Map<String, List<Integer>> produtoresAno) {
         List<ProducerIntervalResponseDTO> todosIntervalos = new ArrayList<>();
 
-        for (Map.Entry<String, List<Integer>> entrada : producerYears.entrySet()) {
+        for (Map.Entry<String, List<Integer>> entrada : produtoresAno.entrySet()) {
             String produtorNome = entrada.getKey();
             List<Integer> anosVencedores = entrada.getValue();
 
@@ -56,54 +98,15 @@ public class ProducerService {
                 int anoSeguinte = anosVencedores.get(i + 1);
                 int intervalo = anoSeguinte - anoAnterior;
 
-                ProducerIntervalResponseDTO dto = new ProducerIntervalResponseDTO(
+                todosIntervalos.add(new ProducerIntervalResponseDTO(
                         produtorNome,
                         intervalo,
                         anoAnterior,
-                        anoSeguinte);
-                todosIntervalos.add(dto);
+                        anoSeguinte));
             }
         }
 
-
-        if (todosIntervalos.isEmpty()) {
-
-            return new AwardIntervalResponseDTO(new ArrayList<>(), new ArrayList<>());
-        }
-
-
-        int menorIntervalo = todosIntervalos.get(0).interval(); 
-        int maiorIntervalo = todosIntervalos.get(0).interval(); 
-
-
-        for (ProducerIntervalResponseDTO dto : todosIntervalos) {
-            if (dto.interval() < menorIntervalo) {
-                menorIntervalo = dto.interval();
-            }
-        }
- 
-        for (ProducerIntervalResponseDTO dto : todosIntervalos) {
-            if (dto.interval() > maiorIntervalo) {
-                maiorIntervalo = dto.interval();
-            }
-        }
-
-        List<ProducerIntervalResponseDTO> min = new ArrayList<>();
-        for (ProducerIntervalResponseDTO dto : todosIntervalos) {
-            if (dto.interval() == menorIntervalo) {
-                min.add(dto);
-            }
-        }
-
-        List<ProducerIntervalResponseDTO> max = new ArrayList<>();
-        for (ProducerIntervalResponseDTO dto : todosIntervalos) {
-            if (dto.interval() == maiorIntervalo) {
-                max.add(dto);
-            }
-        }
-
-        
-        return new AwardIntervalResponseDTO(min, max);
+        return todosIntervalos;
     }
 
     private List<String> splitProducers(String producersString) {

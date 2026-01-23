@@ -1,118 +1,123 @@
 package com.christian.goldenraspberry_api.integration;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import java.util.*;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.web.servlet.MockMvc;
 
 import com.christian.goldenraspberry_api.dto.AwardIntervalResponseDTO;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.christian.goldenraspberry_api.model.Filme;
+import com.christian.goldenraspberry_api.repository.FilmeRepository;
+import com.christian.goldenraspberry_api.service.ProducerService;
 
 @SpringBootTest
-@AutoConfigureMockMvc
 class ProducerControllerIntegrationTest {
 
     @Autowired
-    private MockMvc mockMvc;
+    private ProducerService producerService;
 
     @Autowired
-    private ObjectMapper objectMapper;
+    private FilmeRepository filmeRepository;
 
     @Test
-    void deveRetornarIntervalosDePremioDosProducers() throws Exception {
-        // Act
-        String jsonResponse = mockMvc.perform(get("/api/producers/awards-interval"))
-            .andExpect(status().isOk())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
+    void deveRetornarDadosDeAcordoComOArquivoCSV() {
+        List<Filme> filmesVencedores = filmeRepository.findByWinnerTrue();
+        Map<String, List<Integer>> produtoresAnos = calcularProdutoresAnos(filmesVencedores);
+        List<IntervaloProdutorTest> intervalosEsperados = calcularTodosIntervalos(produtoresAnos);
 
-        AwardIntervalResponseDTO resultado = objectMapper.readValue(
-            jsonResponse, 
-            AwardIntervalResponseDTO.class
-        );
+        assertThat(intervalosEsperados).isNotEmpty();
 
-        // Assert
-        assertThat(resultado).isNotNull();
-        assertThat(resultado.min()).isNotEmpty();
-        assertThat(resultado.max()).isNotEmpty();
+        int menorIntervaloEsperado = intervalosEsperados.stream()
+            .mapToInt(IntervaloProdutorTest::intervalo)
+            .min()
+            .orElseThrow();
 
-        // Valida estrutura do min
-        var primeiroMin = resultado.min().get(0);
-        assertThat(primeiroMin.producer()).isNotBlank();
-        assertThat(primeiroMin.interval()).isGreaterThan(0);
-        assertThat(primeiroMin.previousWin()).isGreaterThan(0);
-        assertThat(primeiroMin.followingWin()).isGreaterThan(primeiroMin.previousWin());
+        int maiorIntervaloEsperado = intervalosEsperados.stream()
+            .mapToInt(IntervaloProdutorTest::intervalo)
+            .max()
+            .orElseThrow();
 
-        // Valida estrutura do max
-        var primeiroMax = resultado.max().get(0);
-        assertThat(primeiroMax.producer()).isNotBlank();
-        assertThat(primeiroMax.interval()).isGreaterThan(0);
-        assertThat(primeiroMax.previousWin()).isGreaterThan(0);
-        assertThat(primeiroMax.followingWin()).isGreaterThan(primeiroMax.previousWin());
+        List<IntervaloProdutorTest> minsEsperados = intervalosEsperados.stream()
+            .filter(i -> i.intervalo == menorIntervaloEsperado)
+            .toList();
 
-        // Valida que min é menor ou igual ao max
-        int menorIntervalo = resultado.min().get(0).interval();
-        int maiorIntervalo = resultado.max().get(0).interval();
-        assertThat(menorIntervalo).isLessThanOrEqualTo(maiorIntervalo);
+        List<IntervaloProdutorTest> maxsEsperados = intervalosEsperados.stream()
+            .filter(i -> i.intervalo == maiorIntervaloEsperado)
+            .toList();
+
+        AwardIntervalResponseDTO resultadoAPI = producerService.getAwardIntervals();
+
+        assertThat(resultadoAPI.min()).hasSize(minsEsperados.size());
+        assertThat(resultadoAPI.max()).hasSize(maxsEsperados.size());
+
+        for (IntervaloProdutorTest esperado : minsEsperados) {
+            boolean encontrado = resultadoAPI.min().stream()
+                .anyMatch(dto -> 
+                    dto.producer().equals(esperado.produtor) &&
+                    dto.interval() == esperado.intervalo &&
+                    dto.previousWin() == esperado.anoAnterior &&
+                    dto.followingWin() == esperado.anoSeguinte
+                );
+            
+            assertThat(encontrado).isTrue();
+        }
+
+        for (IntervaloProdutorTest esperado : maxsEsperados) {
+            boolean encontrado = resultadoAPI.max().stream()
+                .anyMatch(dto -> 
+                    dto.producer().equals(esperado.produtor) &&
+                    dto.interval() == esperado.intervalo &&
+                    dto.previousWin() == esperado.anoAnterior &&
+                    dto.followingWin() == esperado.anoSeguinte
+                );
+            
+            assertThat(encontrado).isTrue();
+        }
     }
 
-    @Test
-    void deveCarregarDadosDoCSVCorretamente() throws Exception {
-        // Act
-        String jsonResponse = mockMvc.perform(get("/api/producers/awards-interval"))
-            .andExpect(status().isOk())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-
-        AwardIntervalResponseDTO resultado = objectMapper.readValue(
-            jsonResponse, 
-            AwardIntervalResponseDTO.class
-        );
-
-        // Assert
-        assertThat(resultado).isNotNull();
-        assertThat(resultado.min()).isNotEmpty();
-        assertThat(resultado.max()).isNotEmpty();
-    }
-
-    @Test
-    void deveRetornarJSONComFormatoCorreto() throws Exception {
-        // Act
-        String jsonResponse = mockMvc.perform(get("/api/producers/awards-interval"))
-            .andExpect(status().isOk())
-            .andReturn()
-            .getResponse()
-            .getContentAsString();
-
-        AwardIntervalResponseDTO resultado = objectMapper.readValue(
-            jsonResponse, 
-            AwardIntervalResponseDTO.class
-        );
-
-        // Assert
-        assertThat(resultado).isNotNull();
-        assertThat(resultado.min()).isNotNull();
-        assertThat(resultado.max()).isNotNull();
+    private Map<String, List<Integer>> calcularProdutoresAnos(List<Filme> filmes) {
+        Map<String, List<Integer>> mapa = new HashMap<>();
         
-        resultado.min().forEach(dto -> {
-            assertThat(dto.producer()).isNotNull();
-            assertThat(dto.interval()).isNotNull();
-            assertThat(dto.previousWin()).isNotNull();
-            assertThat(dto.followingWin()).isNotNull();
-        });
+        for (Filme filme : filmes) {
+            String[] produtores = filme.getProducers().split(",\\s*and\\s+|,\\s+|\\s+and\\s+");
+            for (String produtor : produtores) {
+                String nome = produtor.trim();
+                if (!nome.isEmpty()) {
+                    mapa.computeIfAbsent(nome, k -> new ArrayList<>()).add(filme.getAno());
+                }
+            }
+        }
         
-        resultado.max().forEach(dto -> {
-            assertThat(dto.producer()).isNotNull();
-            assertThat(dto.interval()).isNotNull();
-            assertThat(dto.previousWin()).isNotNull();
-            assertThat(dto.followingWin()).isNotNull();
-        });
+        return mapa;
     }
+
+    private List<IntervaloProdutorTest> calcularTodosIntervalos(Map<String, List<Integer>> produtoresAnos) {
+        List<IntervaloProdutorTest> intervalos = new ArrayList<>();
+        
+        for (Map.Entry<String, List<Integer>> entry : produtoresAnos.entrySet()) {
+            String produtor = entry.getKey();
+            List<Integer> anos = entry.getValue();
+            
+            if (anos.size() < 2) {
+                continue;
+            }
+            
+            Collections.sort(anos);
+            
+            for (int i = 0; i < anos.size() - 1; i++) {
+                int anoAnterior = anos.get(i);
+                int anoSeguinte = anos.get(i + 1);
+                int intervalo = anoSeguinte - anoAnterior;
+                
+                intervalos.add(new IntervaloProdutorTest(produtor, intervalo, anoAnterior, anoSeguinte));
+            }
+        }
+        
+        return intervalos;
+    }
+
+    private record IntervaloProdutorTest(String produtor, int intervalo, int anoAnterior, int anoSeguinte) {}
 }
